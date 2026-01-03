@@ -1,41 +1,58 @@
-# Prerequisites
-*.d
+#######################################
+# OS junk
+#######################################
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
+Thumbs.db
+ehthumbs.db
+Desktop.ini
 
-# Precompiled Headers
-*.gch
-*.pch
+#######################################
+# Editor / IDE
+#######################################
+.vscode/
+*.code-workspace
 
-# Linker files
-*.ilk
+.idea/
+*.iml
+*.ipr
+*.iws
 
-# Debugger Files
-*.pdb
+*.swp
+*.swo
+*~
+*.tmp
+*.log
 
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
+#######################################
+# Arduino / local build outputs
+# (only matters if you configure builds to land in the repo)
+#######################################
+build/
+out/
+dist/
 
-# Fortran module files
-*.mod
-*.smod
+*.elf
+*.hex
+*.bin
+*.map
 
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
+#######################################
+# PlatformIO (only if you use it)
+#######################################
+.pio/
+.pioenvs/
+.piolibdeps/
 
-# Executables
-*.exe
-*.out
-*.app
+secrets.h
+*.env
 
-# debug information files
-*.dwo
+compile_commands.json
+.clangd/
+.cache/

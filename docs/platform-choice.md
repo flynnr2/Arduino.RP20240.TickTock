@@ -1,64 +1,64 @@
 # Platform choice: Nano RP2040 Connect dual-core build
 
+*(See other docs in this pack for full project context.)*
+
 ## Goals that drive the choice
-- True **dual-core split**:
-  - **Core 1**: time-critical capture + PPS discipline (no WiFi/SD/HTTP)
-  - **Core 0**: WiFi/AP, HTTP, SD logging, sensors, display, stats, conversions
-- Capture core uses **one internal timing unit** end-to-end (preferably **CPU cycles**).
-- App core may do all conversions, formatting, logging schema, and UI.
+- Dual-core split: Core1 capture, Core0 app
+- Core1 uses one timing unit end-to-end (prefer cycles)
 
-## Option A: Earle Philhower `arduino-pico` core (recommended default)
-Why it fits:
-- Simple dual-core model: `setup1()` / `loop1()` for Core 1.
-- Provides convenient low-level access for high-resolution timing / cycle counting.
-- Generally easier to implement “hard separation” between cores.
+## Option A: arduino-pico core
+- Recommended default for straightforward dual-core.
 
-Risks / things to validate early:
-- Nano RP2040 Connect uses **u-blox NINA-W102 (ESP32) WiFi module** via SPI.  
-  Ensure the WiFi stack you need (WiFiNINA + HTTP server) works reliably with this core.
-- Library compatibility: some Arduino libraries assume the official Mbed core.
-
-**Phase-0 acceptance tests (must pass before porting everything):**
-1. Dual-core runs: Core1 toggles a pin at a known rate while Core0 services loop normally.
-2. WiFi:
-   - STA connect + serve `/status` page for 30+ minutes
-   - AP mode start + connect from phone/laptop + serve a config page
-   - Reconnect behavior when AP/STA credentials change
-3. SD:
-   - Open/append/flush loop while WiFi is active
-   - Confirm no deadlocks/hangs over 30+ minutes
-4. ISR timing:
-   - Capture ISR runs while WiFi/SD are active; ensure queue doesn’t overflow at expected edge rates
-
-If any of these fail, document:
-- exact board core version
-- exact library versions
-- minimal repro sketch
-- symptom (hang, crash, corrupt SD, WiFi dropouts)
-
-## Option B: Official Arduino Mbed OS core (fallback)
-Pros:
-- “Official” support; tends to be safest for Nano RP2040 Connect peripherals.
-- WiFiNINA compatibility is often better.
-
-Cons:
-- Dual-core is **not** as straightforward; you may need to manually launch Core1 and carefully manage shared state.
-- Harder to keep capture logic completely insulated from Mbed/WiFi activity.
-
-Use this if:
-- WiFiNINA + HTTP is unstable on arduino-pico and you don’t want to patch.
+## Option B: Arduino Mbed core
+- Fallback if peripheral/library compatibility requires it.
 
 ## Timestamp backend decision (Core1 “one unit”)
-### Preferred: CPU cycles (single unit)
-- Store edge timestamps as `uint64_t t_cycles`.
-- Convert to seconds/us only on Core0 for display/logging.
 
-### Acceptable first bring-up: monotonic ticks (still “one unit”)
-- Store timestamps as `uint64_t t_ticks` in a monotonic microsecond timer.
-- Keep the API as `now_ticks()` so the backend can switch to cycles later without changing swing/PPS logic.
+## Accurate timestamping options on RP2040 (with arduino-pico)
+RP2040 does not have an AVR-style EVSYS→timer-capture path, so “hardware timestamps” are achieved via **PIO** (and optionally DMA) or approximated via **GPIO IRQ latency**.
 
-**Recommendation:** start with whatever passes Phase-0 quickest, but keep the **timestamp source abstract** from day one.
+### 1) GPIO interrupt (Core1) + cycle counter (simplest)
+- Attach GPIO edge interrupts.
+- In ISR, record `t_cycles = rp2040.getCycleCount64()` (single unit: CPU cycles).
 
-## Non-goals (explicit)
-- Do not preserve the old serial “tagged CSV” protocol internally.
-- Do not do unit switching (16MHz/us/ns/ms) on Core1.
+**Benefits**
+- Fastest to implement and debug.
+- Uses *cycles* directly (matches “one unit only” requirement).
+- Often sufficient for **PPS** (1 Hz) and can be adequate for pendulum edges if system load/jitter is controlled.
+
+**Tradeoffs**
+- Timestamp reflects **when the ISR runs**, not when the edge occurred:
+  - interrupt latency/jitter from masking, flash stalls, other IRQs
+  - worst-case jitter may correlate with heavy Core0 activity (WiFi/SD), even if Core1 is isolated.
+
+### 2) PIO edge-capture → FIFO (EVSYS-like, recommended for pendulum)
+- A PIO state machine watches the input pin, detects edges, and pushes a timestamp/token into its RX FIFO.
+- Core1 drains the FIFO and reconstructs swings.
+
+**Benefits**
+- Much closer to EVSYS capture: edge is latched by deterministic PIO timing, not ISR latency.
+- Very low jitter and stable timing under system load.
+
+**Tradeoffs**
+- More engineering (PIO program + setup + timestamp extension/wrap handling).
+- Limited FIFO depth; must drain promptly and track overflow.
+
+### 3) PIO edge-capture + DMA → RAM ring (highest robustness)
+- PIO produces timestamp words; DMA streams them into a circular buffer in RAM.
+
+**Benefits**
+- Near-zero CPU overhead; best for bursty edges and “no loss under load”.
+- Clean separation: Core1 processes a RAM ring; Core0 stays out of the way.
+
+**Tradeoffs**
+- Highest complexity (PIO + DMA + ring management).
+- Requires careful overflow/diagnostics (high-water marks, drop counters).
+
+### Recommended combination (first implementation)
+- **Pendulum edges:** PIO capture (start with FIFO, upgrade to DMA if needed)
+- **GPS PPS:** GPIO IRQ + cycle counter initially; move to PIO only if jitter under load proves problematic
+
+This gives EVSYS-like determinism where it matters most, while keeping the first bring-up manageable.
+
+
+- Prefer cycles; allow monotonic ticks for first bring-up behind an abstraction.

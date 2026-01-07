@@ -2,15 +2,20 @@
 
 ## Decision (locked)
 - **Arduino core:** **arduino-pico** (Earle Philhower RP2040 core)
-- **Capture strategy:** **PIO edge capture + DMA → RAM ring buffer** from day one
+- **Capture strategy:** **Unified PIO edge capture + DMA → RAM ring** for **both** pendulum sensor edges **and** GPS PPS edges
 - **Core split:** Core1 = capture + PPS discipline; Core0 = WiFi/HTTP/SD/sensors/display/stats
 
-
 ## Accurate timestamping options on RP2040 (arduino-pico)
-- **PIO + DMA → RAM ring (chosen):** deterministic edge capture, robust under WiFi/SD load, best for fast pendulums.
-- **PIO → FIFO (not chosen):** simpler, but drops occur if CPU draining falls behind.
-- **GPIO IRQ + cycle counter:** simplest; good for PPS; has ISR latency/jitter.
+- **PIO + DMA → RAM ring (chosen):** deterministic edge capture, robust under WiFi/SD load, best for fast pendulums; use the same pipeline for PPS.
+- **PIO → FIFO:** simpler, but drops occur if CPU draining falls behind.
+- **GPIO IRQ + cycle counter:** simplest, but includes ISR latency/jitter.
 
 ## Recommended combination
 - **Pendulum edges:** PIO + DMA → RAM ring (**chosen**)
-- **GPS PPS:** start with GPIO IRQ + `rp2040.getCycleCount64()` or use PIO+DMA for uniformity
+- **GPS PPS:** PIO + DMA → RAM ring (**chosen**) — same event pipeline and timebase as pendulum edges
+- **Reason:** eliminates ISR-latency coupling and makes “simultaneous” events deterministic (ties are valid)
+
+## Collision/tie handling and resolution
+- With unified PIO timestamps, PPS and pendulum edges can legitimately share the same timestamp when they occur within one tick.
+- Treat equal timestamps as valid; downstream logic must not assume strict ordering.
+- Choose a tick resolution that makes quantization negligible vs your error budget (often 1 µs or better is plenty; faster ticks provide extra margin).

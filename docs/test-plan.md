@@ -1,11 +1,11 @@
 # Test plan: RP2040 dual-core TickTock system
 
 
-### T1.0 DMA capture health (Core1)
-- Track DMA write progress (implementation-specific) and ring high-water mark.
-- Track overrun/drop counters.
+## DMA capture health tests
+### T_DMA_1 Ring health
+- Track ring high-water mark, DMA progress, and overrun/drop counters.
+Pass: no overruns at expected rates; overruns are explicit and visible.
 
-Pass:
-- No DMA overruns at expected edge rates over multi-hour runs.
-- Overrun behavior is explicit (counter increments, visible on `/status` and logs).
-
+### T_DMA_2 PPS vs pendulum collision/tie handling
+- Create a synthetic case where PPS and a pendulum edge occur within the same tick.
+Pass: system treats ties as valid; no spurious jitter alarms; swing reconstruction remains stable.

@@ -1,6 +1,15 @@
 # Existing system map + RP2040 dual‑core reimplementation strategy
 *(Source: ZIPs you provided — **Arduino.Pendulum.Timer** (Nano Every) + **Arduino.Pendulum.Timer.Display** (UNO R4 WiFi). No new code written yet.)*
 
+## Decisions (locked)
+- **Target board:** Nano RP2040 Connect
+- **Arduino core:** **arduino-pico** (Earle Philhower RP2040 core)
+- **Capture pipeline:** **Unified PIO edge capture + DMA → RAM ring** for **both** pendulum sensor edges and GPS PPS edges
+- **Time unit on Core1:** a **single tick domain** derived from the PIO capture timebase (no unit switching)
+- **Collision policy:** simultaneous PPS + pendulum edges may share the same timestamp; **ties are valid**
+- **Core split:** Core1 = capture + PPS discipline; Core0 = WiFi/HTTP/SD/sensors/display/stats + all conversions
+
+
 ## 1) Entry points (what boots where)
 
 ### 1.1 Nano Every (time‑critical)
@@ -210,29 +219,34 @@ struct CaptureTunables {
 
 ---
 
-## 7) Recommended RP2040 timebase approach (to meet “cycles only” requirement)
+## 7) RP2040 timestamping approach (chosen)
 
-### Option A (best match): cycle counter (CPU cycles)
-- Capture timestamps in **CPU cycles** on Core1.
-- Core0 converts to seconds/us as needed.
+### Why the Nano Every EVSYS approach changes on RP2040
+The Nano Every used **EVSYS → TCB capture** for hardware timestamps. RP2040 has no EVSYS equivalent, so we will use **PIO** as the hardware capture engine.
 
-### Option B (simpler first bring-up): monotonic tick timer (single unit)
-- Use RP2040’s monotonic timer (single tick unit) for easier initial integration,
-- keep an abstraction so Option A can replace it without touching the state machine logic.
+### Chosen design: unified PIO + DMA ring for *all* edges
+- A PIO state machine captures **both** pendulum sensor edges and PPS edges.
+- DMA drains the PIO RX FIFO continuously into a **RAM ring buffer**.
+- Core1 consumes the ring, reconstructs swings, and computes `pps_ticks` from PPS events.
 
-**Strategy:** implement the capture pipeline behind `now_ticks()` so the timestamp backend can evolve.
+**Benefits:** deterministic timestamps, minimal CPU coupling, robust under WiFi/SD/HTTP load, and “PPS collides with breakbeam edge” becomes a deterministic tie (or 1‑tick separation), not ISR jitter.
 
----
+### Tick resolution guidance
+- Choose a fixed tick rate so quantization is well below your error budget (often **1 µs or better** is plenty for pendulum work; faster ticks provide margin).
+- Use unsigned wrap-safe subtraction everywhere: `dt = (uint32_t)(t2 - t1)`.
+
+### Data handling
+- Core1 outputs per-swing `SampleCore1` records into an SPSC sample queue.
+- Core0 performs unit conversions (seconds/us/ns, ppm scaling cleanup), logging, UI, and networking.
+
 
 ## 8) Codex-ready task breakdown (no coding yet)
 
-### Task 0 — Decide Arduino core/toolchain constraints
+### Task 0 — Platform constraints (already decided)
 Deliverable: `docs/platform-choice.md`
-- Confirm which core supports:
-  - dual-core execution model
-  - WiFi stack needed for Nano RP2040 Connect
-  - SD + sensors concurrently
-- Choose Option A vs B timestamp backend for first iteration.
+- **Arduino core:** **arduino-pico** (locked)
+- **Capture:** unified **PIO→DMA→RAM ring** for pendulum + PPS (locked)
+- Phase‑0 validation: WiFi/AP + HTTP + SD logging stability while capture runs; confirm no drops at expected rates
 
 ### Task 1 — Produce a canonical “existing behavior spec” from the ZIPs
 Deliverable: `docs/existing-behavior-spec.md`
@@ -247,14 +261,14 @@ Deliverable: `src/shared/`
 - `capture_tunables.h` (versioned config struct)
 - Document memory ordering rules (SPSC only).
 
-### Task 3 — Core1: capture + reconstruction + PPS discipline
+### Task 3 — Core1: unified capture + reconstruction + PPS discipline
 Deliverable: `src/core1/`
-- timestamp backend abstraction (`now_ticks()`)
-- edge ISR → `EdgeEvent` buffer
-- `process_edge_events()` port (same state machine)
-- PPS ISR + `process_pps()` port (same tunables, same outputs)
-- push `SampleCore1` to queue
-- diagnostics: queue fill, dropped count, PPS quality metrics
+- **PIO program** to monitor pendulum + PPS pins and emit packed edge events
+- **DMA** into RAM ring buffer + overrun accounting
+- Ring consumer → expand events → `process_edge_events()` (same swing state machine)
+- PPS events → compute `pps_ticks` → run existing dual-track smoothing (fast/slow) + lock state
+- Push `SampleCore1` to SPSC sample queue
+- Diagnostics: ring high-water mark, DMA overruns, dropped sample count, PPS quality metrics
 
 ### Task 4 — Core0: consume samples + attach sensors + stats
 Deliverable: `src/core0/`

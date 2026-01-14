@@ -8,6 +8,7 @@ Use this as a short, persistent reminder before starting any stage from the chec
 - Update `docs/STATUS.md` after each stage (current stage, completed items, next up, blockers).
 
 ## Non-negotiable constraints
+- **Docs are contract; do not invent fields**
 - **No heap allocation in the ingest path.**
 - **No I2C/SD inside HTTP handlers** (except `/download` streaming).
 - **No blocking delays in the scheduler** (cooperative loop only).

@@ -9,6 +9,7 @@ approved design contract and constraints.
 - [ ] Confirm `flags` bit assignments and ownership (Core1 vs Core0).
 - [ ] Lock CSV header/versioning format (`schema_version=1,units=cycles`).
 - [ ] Confirm HTTP endpoints and response schemas are doc-aligned (`/latest`, `/status`, `/stats`, `/files`).
+- [ ] Implement `schema.h` (or equivalent) with: SCHEMA_VERSION, canonical CSV column list builder, gps_state string table (for /status + logs), flags bit names/strings
 
 ## Stage 1 — Shared module (`src/shared/`)
 - [ ] Define shared types (`SwingRecordV1`, `gps_state_t`, flags).
@@ -30,6 +31,7 @@ approved design contract and constraints.
 - [ ] Implement high-priority queue drain loop (no logging/rendering in drain loop).
 - [ ] Maintain `LatestState` with last record, derived values, counters, and env cache.
 - [ ] Validate monotonic `swing_id`/`pps_id` and track anomalies.
+- [ ] Ingest drain loop contains *no* SD/WiFi/OLED/I2C work.
 
 ## Stage 4 — Core0 processing & rolling stats (`src/core0/stats/`)
 - [ ] Convert cycles → seconds/us on Core0 only.
@@ -47,16 +49,20 @@ approved design contract and constraints.
 - [ ] Append one row per `SwingRecordV1`.
 - [ ] Buffer writes + flush/rotation policy.
 - [ ] Surface SD errors via flags/counters; keep capture running.
+- [ ] SD writes are buffered + flush policy; no per-line flush.
+- [ ] Append env fields into the same CSV row.
 
 ## Stage 7 — Networking & HTTP (`src/core0/net/`)
 - [ ] Implement WiFi state machine (STA preferred, AP fallback if needed).
 - [ ] Implement `/latest`, `/status`, `/stats`, `/files` endpoints.
 - [ ] Ensure handlers only read `LatestState` (no sensor/SD work).
+- [ ] /download is chunked and yields between chunks.
 - [ ] Implement `/download` streaming with SD access only in that handler.
 
 ## Stage 8 — OLED UI (`src/core0/display/`)
 - [ ] Render pages (period/rate, gps_state, env, SD/WiFi status).
 - [ ] Page rotation/button input without blocking.
+- [ ] OLED refresh bounded; no allocations in render loop.
 
 ## Stage 9 — Integration & verification
 - [ ] DMA ring health test (no overruns at expected rates).

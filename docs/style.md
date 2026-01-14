@@ -1,5 +1,7 @@
 # Style guide (unified for the RP2040 rewrite)
 
+**Scope:** Nano RP2040 Connect using **arduino-pico**.
+
 ## 1) Naming conventions
 - **Types (struct/class/enum):** `PascalCase`
 - **Functions & variables:** `lower_snake_case`
@@ -7,10 +9,16 @@
 - **Macros:** avoid; if necessary, `MACRO_SCREAMING_SNAKE`
 
 ### Units suffix rule (mandatory)
+- Prefer `*_cycles` for all Core1 capture timing (single tick domain). Use `*_ticks` only if referencing a peripheral register that is explicitly called “ticks”.
 Any value with a unit must be suffixed:
 - `_ticks`, `_cycles`, `_us`, `_ms`, `_ns`, `_ppm`, `_ppb`, `_degC`, `_pct`, `_hPa`, etc.
 If scaled:
 - include scale in name: `_ppm_x1e6`, `_mv_x10`, etc.
+
+## Units (project-wide)
+- Core1 internal timebase and all logged swing timing is in **`*_cycles`** (u32) unless explicitly stated otherwise.
+- PPS metadata uses `pps_interval_cycles_raw` and `pps_age_cycles`.
+- Converted units (`*_us`, `*_ms`, `*_ppm_x1e6`) are produced on Core0 for presentation only.
 
 ## 2) File/module layout
 - Keep `.ino` files thin: wiring + delegating into modules.

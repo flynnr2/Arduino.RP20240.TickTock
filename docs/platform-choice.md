@@ -19,3 +19,8 @@
 - With unified PIO timestamps, PPS and pendulum edges can legitimately share the same timestamp when they occur within one tick.
 - Treat equal timestamps as valid; downstream logic must not assume strict ordering.
 - Choose a tick resolution that makes quantization negligible vs your error budget (often 1 µs or better is plenty; faster ticks provide extra margin).
+
+## Logging schema (chosen)
+- Use a **single combined record (one row per swing)**, raw-first, units in **cycles**.
+- Include PPS freshness (`pps_age_cycles`) and `pps_new`+`pps_interval_cycles_raw` to reconstruct PPS stream.
+See `docs/logging-schema.md`.

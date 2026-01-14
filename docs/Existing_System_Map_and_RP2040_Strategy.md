@@ -108,11 +108,10 @@ High-level stages inside `process_pps()`:
    - blend weight based on R between `ppsBlendLoPpm` and `ppsBlendHiPpm`
    - forces fully-slow when locked, fully-fast when acquiring (per code logic)
 
-### 3.3 Outputs
+### 3.3 Outputs (legacy; not in new RP2040 schema)
 The Nano exports:
 - `corr_inst_ppm`  (instantaneous correction) — **ppm × 1e6**
 - `corr_blend_ppm` (blended correction) — **ppm × 1e6**
-- `gps_status` enum: `{ NO_PPS, ACQUIRING, LOCKED }` (shared header)
 - `dropped_events` count
 
 These are computed from `pps_delta_*` relative to `F_CPU` in code.
@@ -130,7 +129,6 @@ From `Nano.Every/src/SerialParser.cpp` `sendSample()`:
   - `AdjustedMs` → tag `mSec`
 - Data fields (always 8 fields after the tag):
 
-`<tag>,tick,tock,tick_block,tock_block,corr_inst_ppm,corr_blend_ppm,gps_status,dropped_events`
 
 ### 4.2 Header + status lines
 - Header line starts with `TAG_HDR` and provides field names matching the units mode.
@@ -166,27 +164,47 @@ Port from UNO R4:
 - All conversions and presentation formatting
 
 ## 5.2 Shared-memory interface (replaces serial)
-### A) SPSC queue: Core1 → Core0
-Payload should mirror *what Nano really sends today* (plus optional diagnostics), keeping it compact:
+
+### A) SPSC queue: Core1 → Core0 (single combined record; one row per swing)
+We will emit a **single combined record per swing**, **raw-first**, in **cycles**. This replaces the old “SwingRecordV1” concept and **omits** the `corr_*` fields (they can be computed in post-processing).
 
 ```c
-struct SampleCore1 {
-  uint32_t tick_ticks;
-  uint32_t tock_ticks;
-  uint32_t tick_block_ticks;
-  uint32_t tock_block_ticks;
-  int32_t  corr_inst_ppm_x1e6;
-  int32_t  corr_blend_ppm_x1e6;
-  uint16_t dropped_events;
-  uint8_t  gps_status;     // 0/1/2
-  uint32_t sample_seq;     // optional
-};
+typedef enum : uint8_t {
+  GPS_NO_PPS     = 0,
+  GPS_ACQUIRING  = 1,
+  GPS_LOCKED     = 2,
+  GPS_HOLDOVER   = 3,
+  GPS_BAD_JITTER = 4
+} gps_state_t;
+
+typedef struct {
+  // Alignment / epoch
+  uint32_t swing_id;        // monotonic
+  uint32_t pps_id;          // last PPS edge seen; monotonic
+  uint32_t pps_age_cycles;  // cycles since last PPS edge (freshness)
+
+  // PPS raw (meaningful when pps_new==1)
+  uint32_t pps_interval_cycles_raw; // cycles between PPS edges
+  uint8_t  pps_new;                 // 1 only on first swing after PPS edge
+
+  // Swing raw (cycles)
+  uint32_t tick_block_cycles;
+  uint32_t tick_cycles;
+  uint32_t tock_block_cycles;
+  uint32_t tock_cycles;
+
+  // State / flags
+  uint8_t  gps_state;   // gps_state_t (authoritative)
+  uint16_t flags;       // bitfield: dropped, glitch, clamp, ring overflow, PPS outlier, ...
+} SwingRecordV1;
 ```
 
-Core0 maps this to the full shared `PendulumSample` (adds env floats).
+**Notes**
+- Core0 logs `SwingRecordV1` directly (CSV) and may also enrich into a “latest snapshot” for UI/HTTP.
 
 ### B) Shared config: Core0 → Core1
 Replace the `set/get` serial commands with a versioned struct:
+
 
 ```c
 struct CaptureTunables {
@@ -215,7 +233,6 @@ struct CaptureTunables {
 
 ### 6.2 Known inconsistencies (explicitly “don’t get bogged down”)
 - SD header inconsistencies: treat as legacy; rewrite cleanly with versioned schema
-- `corr_{inst,blend}_ppm` scaling: re-derive and standardize; keep `×1e6` integer transport if desired, but define conversion utilities once
 
 ---
 
@@ -236,7 +253,7 @@ The Nano Every used **EVSYS → TCB capture** for hardware timestamps. RP2040 ha
 - Use unsigned wrap-safe subtraction everywhere: `dt = (uint32_t)(t2 - t1)`.
 
 ### Data handling
-- Core1 outputs per-swing `SampleCore1` records into an SPSC sample queue.
+- Core1 outputs per-swing `SwingRecordV1` records into an SPSC sample queue.
 - Core0 performs unit conversions (seconds/us/ns, ppm scaling cleanup), logging, UI, and networking.
 
 
@@ -256,7 +273,7 @@ Deliverable: `docs/existing-behavior-spec.md`
 
 ### Task 2 — Define shared types + queues
 Deliverable: `src/shared/`
-- `types.h` (`SampleCore1`, `PendulumSample`, enums)
+- `types.h` (`SwingRecordV1`, `gps_state_t`, flags, enums)
 - `spsc_queue.h` (single-producer/single-consumer ring buffer)
 - `capture_tunables.h` (versioned config struct)
 - Document memory ordering rules (SPSC only).
@@ -267,7 +284,7 @@ Deliverable: `src/core1/`
 - **DMA** into RAM ring buffer + overrun accounting
 - Ring consumer → expand events → `process_edge_events()` (same swing state machine)
 - PPS events → compute `pps_ticks` → run existing dual-track smoothing (fast/slow) + lock state
-- Push `SampleCore1` to SPSC sample queue
+- Push `SwingRecordV1` to SPSC sample queue
 - Diagnostics: ring high-water mark, DMA overruns, dropped sample count, PPS quality metrics
 
 ### Task 4 — Core0: consume samples + attach sensors + stats
@@ -304,3 +321,10 @@ Deliverable: `tools/verify/`
 - The Nano Every design has excellent “hardware timestamp → main-loop reconstruction” separation; keep that separation.
 - The biggest simplification in RP2040 rewrite is eliminating serial framing and all unit-tag parsing.
 - Keep the PPS disciplining code “as is” initially, then fix scaling/units issues once correctness is confirmed.
+
+## Logging schema (chosen)
+We will log a **single combined record per swing**, raw-first, in **cycles**:
+- swing raw: `tick_block_cycles`, `tick_cycles`, `tock_block_cycles`, `tock_cycles`
+- alignment: `swing_id`, `pps_id`, `pps_age_cycles`
+- PPS raw: `pps_interval_cycles_raw` with `pps_new` flag (1 only on first swing after PPS)
+See `docs/logging-schema.md`.

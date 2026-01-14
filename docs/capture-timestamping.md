@@ -6,9 +6,12 @@
 - Core1 consumes the RAM ring, reconstructs swings, runs PPS discipline, and outputs per-swing samples
 - Core0 enriches/logs/serves UI; Core0 never participates in capture
 
+## Output to Core0 / logging
+- Core1 produces **one record per swing** using the `SwingRecordV1` schema (raw cycles + PPS alignment + state).
+- `pps_new==1` only on the **first swing after a PPS edge**, enabling reconstruction of the PPS series.
+See `docs/logging-schema.md`.
+
 ## Context
-
-
 
 ## Unified capture pipeline (pendulum + PPS)
 We treat PPS as **just another edge source** and timestamp it through the **same PIO+DMA** pipeline as the pendulum sensor.

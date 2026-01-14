@@ -244,7 +244,7 @@ The Nano Every used **EVSYS → TCB capture** for hardware timestamps. RP2040 ha
 ### Chosen design: unified PIO + DMA ring for *all* edges
 - A PIO state machine captures **both** pendulum sensor edges and PPS edges.
 - DMA drains the PIO RX FIFO continuously into a **RAM ring buffer**.
-- Core1 consumes the ring, reconstructs swings, and computes `pps_ticks` from PPS events.
+- Core1 consumes the ring, reconstructs swings, and computes `pps_cycles` from PPS events.
 
 **Benefits:** deterministic timestamps, minimal CPU coupling, robust under WiFi/SD/HTTP load, and “PPS collides with breakbeam edge” becomes a deterministic tie (or 1‑tick separation), not ISR jitter.
 
@@ -283,7 +283,7 @@ Deliverable: `src/core1/`
 - **PIO program** to monitor pendulum + PPS pins and emit packed edge events
 - **DMA** into RAM ring buffer + overrun accounting
 - Ring consumer → expand events → `process_edge_events()` (same swing state machine)
-- PPS events → compute `pps_ticks` → run existing dual-track smoothing (fast/slow) + lock state
+- PPS events → compute `pps_cycles` → run existing dual-track smoothing (fast/slow) + lock state
 - Push `SwingRecordV1` to SPSC sample queue
 - Diagnostics: ring high-water mark, DMA overruns, dropped sample count, PPS quality metrics
 
@@ -327,4 +327,4 @@ We will log a **single combined record per swing**, raw-first, in **cycles**:
 - swing raw: `tick_block_cycles`, `tick_cycles`, `tock_block_cycles`, `tock_cycles`
 - alignment: `swing_id`, `pps_id`, `pps_age_cycles`
 - PPS raw: `pps_interval_cycles_raw` with `pps_new` flag (1 only on first swing after PPS)
-See `docs/logging-schema.md`.
+See `docs/core1/logging-schema.md`.

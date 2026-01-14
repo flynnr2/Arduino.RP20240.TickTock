@@ -48,13 +48,19 @@ Capture is unified **PIO→DMA→RAM ring** for pendulum + PPS; the log stores t
 
 ---
 
-## `flags` bitfield (initial proposal)
+## `flags` bitfield (v1)
 - bit 0: `FLAG_DROPPED` — one or more events/samples dropped since last record
 - bit 1: `FLAG_GLITCH` — invalid edge pattern / reconstruction reset
 - bit 2: `FLAG_CLAMP` — correction/scale clamp applied
 - bit 3: `FLAG_RING_OVERFLOW` — DMA ring overrun occurred
 - bit 4: `FLAG_PPS_OUTLIER` — PPS interval rejected as outlier (Hampel/median)
-- bits 5–15: reserved
+- bit 5: `FLAG_PPS_MISSING` — PPS expected but not observed within horizon for this swing
+- bit 6: `FLAG_TIME_INVALID` — Core0 time-of-day not valid (no NTP/time source yet)
+- bit 7: `FLAG_SD_ERROR` — SD logging currently unavailable or write failure detected
+- bit 8: `FLAG_WIFI_DOWN` — WiFi currently disconnected/unavailable (STA and/or AP)
+- bit 9: `FLAG_SENSOR_MISSING` — one or more configured environmental sensors missing or not responding
+- bit 10: `FLAG_OLED_ERROR` — OLED init/write failure; UI disabled or degraded
+- bits 11–15: reserved
 
 ---
 

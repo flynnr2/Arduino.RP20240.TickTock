@@ -3,7 +3,7 @@
 Use this as a short, persistent reminder before starting any stage from the checklist.
 
 ## Progress protocol
-- Work **stage by stage** from `docs/Implementation_Checklist.md`.
+- Work **stage by stage** from `docs/implementation-checklist.md`.
 - Stop after each stage for review before proceeding.
 - Update `docs/STATUS.md` after each stage (current stage, completed items, next up, blockers).
 

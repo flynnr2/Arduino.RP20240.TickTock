@@ -20,7 +20,7 @@ typedef struct {
 **Tie policy:** if PPS and pendulum change in the same tick, Core1 emits two events with identical `t_cycles` (or derives two from one packed word).
 
 ## Preferred combined swing record (logging + Core0 processing)
-This is the **single-row-per-swing** record used for logging and post-processing (see `docs/logging-schema.md`).
+This is the **single-row-per-swing** record used for logging and post-processing (see `docs/core1/logging-schema.md`).
 
 ```c
 typedef enum : uint8_t {
@@ -81,4 +81,3 @@ typedef struct {
 - **Core0-originated bits** (6–10) describe application-layer health and are primarily used for UI/HTTP `/status`.
 - Readers must treat unknown bits as “ignore” (forward-compatible).
 - If a bit’s semantics change, bump the **schema_version** in the CSV header.
-

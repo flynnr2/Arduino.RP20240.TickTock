@@ -24,7 +24,7 @@ The intent is to keep Core1 “capture‑pure” and make Core0 an application l
 
 ### Root docs
 - `platform-choice.md` — platform decision (arduino-pico) and capture pipeline choice
-- `Existing_System_Map_and_RP2040_Strategy.md` — mapping of the current two‑MCU system and the RP2040 reimplementation plan
+- `existing-system-map-and-rp2040-strategy.md` — mapping of the current two‑MCU system and the RP2040 reimplementation plan
 
 ---
 
@@ -44,4 +44,3 @@ The intent is to keep Core1 “capture‑pure” and make Core0 an application l
 3. Read **`docs/core1/*`** to implement Core1.
 4. Read **`docs/core0/architecture.md`** to implement Core0 modules.
 5. Use **`docs/core1/test-plan.md`** to validate capture health under load.
-

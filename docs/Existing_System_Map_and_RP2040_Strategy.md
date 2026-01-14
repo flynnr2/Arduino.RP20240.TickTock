@@ -170,11 +170,11 @@ We will emit a **single combined record per swing**, **raw-first**, in **cycles*
 
 ```c
 typedef enum : uint8_t {
-  GPS_NO_PPS     = 0,
-  GPS_ACQUIRING  = 1,
-  GPS_LOCKED     = 2,
-  GPS_HOLDOVER   = 3,
-  GPS_BAD_JITTER = 4
+  NO_PPS     = 0,
+  ACQUIRING  = 1,
+  LOCKED     = 2,
+  HOLDOVER   = 3,
+  BAD_JITTER = 4
 } gps_state_t;
 
 typedef struct {

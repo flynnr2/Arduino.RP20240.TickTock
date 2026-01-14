@@ -15,9 +15,9 @@ Core0 polls environmental sensors and caches the latest readings for logging, UI
 
 ### `LatestState.env` (recommended fields)
 - `env_valid` (bool)
-- `temp_c` (float)
+- `temp_degC` (float)
 - `rh_pct` (float)
-- `press_hpa` (float)
+- `press_hPa` (float)
 - `env_ts_ms` (u32, `millis()` timestamp)
 
 ### Sensor availability flags
@@ -57,7 +57,7 @@ On boot:
 
 ## Logging
 If desired, append environmental fields to the swing CSV row (Core0 choice):
-- `temp_c,rh_pct,press_hpa`
+- `temp_degC,rh_pct,press_hPa`
 - If a sensor is missing, log empty field or a sentinel (prefer empty for CSV compatibility).
 
 ---

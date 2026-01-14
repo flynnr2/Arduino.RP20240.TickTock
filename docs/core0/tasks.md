@@ -1,7 +1,5 @@
 Below is a **Codex-ready Core0 task breakdown** that maps directly from the current UNO “other stuff” to the new RP2040 Core0 architecture (queue ingest + `LatestState` hub + SD/WiFi/OLED/sensors). Each task has: **goal, files, key behaviors, acceptance tests**.
 
-You can drop this straight into a `docs/core0/tasks.md` if you want.
-
 ---
 
 # Core0 Implementation Tasks (RP2040 / arduino-pico)
@@ -39,7 +37,7 @@ You can drop this straight into a `docs/core0/tasks.md` if you want.
 **Files**
 
 * `src/core0/state/latest_state.h/.cpp`
-* `src/common/types.h` (already exists: `SwingRecordV1`, `gps_state_t`, flags)
+* `src/shared/types.h` (already exists: `SwingRecordV1`, `gps_state_t`, flags)
 
 **Behaviors**
 
@@ -65,7 +63,7 @@ You can drop this straight into a `docs/core0/tasks.md` if you want.
 **Files**
 
 * `src/core0/ingest/swing_ingest.h/.cpp`
-* `src/common/ring_spsc.h` (if not already)
+* `src/shared/ring_spsc.h` (if not already)
 * `src/shared/interfaces.h` → referenced but not modified
 
 **Behaviors**
@@ -93,7 +91,7 @@ You can drop this straight into a `docs/core0/tasks.md` if you want.
 
 * `src/core0/processing/conversions.h/.cpp`
 * `src/core0/processing/aggregates.h/.cpp` (optional but useful)
-* `src/common/time_utils.h` (wrap-safe helpers)
+* `src/shared/time_utils.h` (wrap-safe helpers)
 
 **Behaviors**
 

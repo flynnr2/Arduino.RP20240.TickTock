@@ -32,7 +32,7 @@ Line 2 (columns):
 - `swing_id,pps_id,pps_age_cycles,pps_new,pps_interval_cycles_raw,tick_block_cycles,tick_cycles,tock_block_cycles,tock_cycles,gps_state,flags`
 
 Optional appended fields (if enabled):
-- `temp_c,rh_pct,press_hpa`
+- `temp_degC,rh_pct,press_hPa`
 
 ### Row semantics
 - When `pps_new==0`, log `pps_interval_cycles_raw=0` (preferred).

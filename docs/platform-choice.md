@@ -23,4 +23,4 @@
 ## Logging schema (chosen)
 - Use a **single combined record (one row per swing)**, raw-first, units in **cycles**.
 - Include PPS freshness (`pps_age_cycles`) and `pps_new`+`pps_interval_cycles_raw` to reconstruct PPS stream.
-See `docs/logging-schema.md`.
+See `docs/core1/logging-schema.md`.

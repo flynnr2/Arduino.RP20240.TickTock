@@ -9,7 +9,7 @@
 ## Output to Core0 / logging
 - Core1 produces **one record per swing** using the `SwingRecordV1` schema (raw cycles + PPS alignment + state).
 - `pps_new==1` only on the **first swing after a PPS edge**, enabling reconstruction of the PPS series.
-See `docs/logging-schema.md`.
+See `docs/core1/logging-schema.md`.
 
 ## Context
 
@@ -28,7 +28,7 @@ If both inputs change in the same tick, capture emits **one word** with both bit
 Equal timestamps are valid. Downstream code must accept ties and process by `chg_mask` rather than assuming strict ordering.
 
 ### Discipline using unified timestamps
-Compute `pps_ticks = ts_pps[n] - ts_pps[n-1]` (unsigned wrap). Feed `pps_ticks` into the existing fast/slow smoothing.
+Compute `pps_cycles = ts_pps[n] - ts_pps[n-1]` (unsigned wrap). Feed `pps_cycles` into the existing fast/slow smoothing.
 Interpret pendulum edge intervals in the same tick domain, applying the discipline scale.
 
 ### Resolution guidance

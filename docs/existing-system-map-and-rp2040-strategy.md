@@ -1,6 +1,12 @@
 # Existing system map + RP2040 dual‑core reimplementation strategy
 *(Source: ZIPs you provided — **Arduino.Pendulum.Timer** (Nano Every) + **Arduino.Pendulum.Timer.Display** (UNO R4 WiFi). No new code written yet.)*
 
+
+
+## Updates since initial plan
+- Core0 produces **two** SD logs: raw (authoritative SwingRecordV1 + env) and stats (derived StatsRecordV1 snapshots).
+- Core0 conversions use a **stable-first** PPS scale: update only when `gps_state==LOCKED`; hold last-good through `ACQUIRING`/`BAD_JITTER`.
+- Configuration is persisted (version+CRC) and tunables are editable via a minimal Serial CLI (optional HTTP `/config`).
 ## Decisions (locked)
 - **Target board:** Nano RP2040 Connect
 - **Arduino core:** **arduino-pico** (Earle Philhower RP2040 core)

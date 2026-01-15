@@ -1,324 +1,148 @@
-Below is a **Codex-ready Core0 task breakdown** that maps directly from the current UNO “other stuff” to the new RP2040 Core0 architecture (queue ingest + `LatestState` hub + SD/WiFi/OLED/sensors). Each task has: **goal, files, key behaviors, acceptance tests**.
+# Core0 Tasks
+
+This is a Codex-ready breakdown of Core0 work, aligned to `docs/core0/architecture.md` and the shared contract in `docs/shared/interfaces.md`.
+
+Core0 is the application layer: ingest Core1 records, compute stable derived values and rolling stats, log to SD (raw+stats), serve HTTP, poll sensors, drive OLED, and manage configuration/tunables.
 
 ---
 
-# Core0 Implementation Tasks (RP2040 / arduino-pico)
+## Task 0 — Core0 skeleton + cooperative scheduler
+**Goal:** Core0 main loop that never blocks Core1 ingest.
 
-## Task 0 — Core0 skeleton + scheduler loop
-
-**Goal:** Create Core0 entrypoint and a cooperative scheduler that never blocks Core1 ingest.
-
-**Files**
-
-* `src/core0/core0_main.cpp`
-* `src/core0/scheduler.h/.cpp` (or keep scheduler inline)
-
-**Behaviors**
-
-* `setup()` initializes modules (config, ingest, sensors, storage, net, oled).
-* `loop()`:
-
-  * drains Core1 queue first (tight loop, bounded per iteration optional)
-  * runs periodic jobs (sensors, OLED, SD flush, housekeeping)
-  * runs network tick every loop (non-blocking)
+**Deliverables**
+- `src/core0/core0_main.cpp`
+- `src/core0/scheduler.*` (optional)
 
 **Acceptance**
-
-* Compiles on Nano RP2040 Connect (arduino-pico).
-* With a fake “record generator” (or Core1 stub), Core0 continues to ingest without stalling while WiFi/SD/OLED are enabled.
-* No long blocking calls inside the ingest drain path.
+- Compiles for Nano RP2040 Connect (arduino-pico).
+- Queue drain is always executed first; no SD/WiFi/OLED/I2C calls inside drain.
 
 ---
 
 ## Task 1 — Shared state hub: `LatestState`
+**Goal:** A single in-memory “truth” object for UI/API/logging.
 
-**Goal:** Define a single in-memory “truth” object that all presentation/logging reads from.
+**Deliverables**
+- `src/core0/state/latest_state.*`
 
-**Files**
-
-* `src/core0/state/latest_state.h/.cpp`
-* `src/shared/types.h` (already exists: `SwingRecordV1`, `gps_state_t`, flags)
-
-**Behaviors**
-
-* Stores last `SwingRecordV1`
-* Stores derived values for UI/API:
-
-  * `period_us` or `period_s` (derived on Core0)
-  * `pps_age_ms` (derived)
-  * counters: counts by `gps_state`, flags counts, SD/WiFi health
-* Thread model: Core0-only ownership, updated by ingest, read by others
-
-**Acceptance**
-
-* Unit-like compile check: all modules depend only on `LatestState` and don’t duplicate parsing/derivations.
-* `LatestState` can be printed/serialized without touching hardware.
+**Must include**
+- last `SwingRecordV1`
+- last env sample
+- rolling aggregates and a current `StatsRecordV1`
+- health counters (flags counts, SD/WiFi/sensor status)
+- current `pps_cycles_last_good` + “scale valid” indicator
 
 ---
 
 ## Task 2 — Ingest: drain Core1 SPSC queue of `SwingRecordV1`
+**Goal:** Replace legacy serial parsing with shared-memory ingest.
 
-**Goal:** Replace `NanoComm` with shared-memory ingest.
+**Deliverables**
+- `src/core0/ingest/swing_ingest.*`
 
-**Files**
-
-* `src/core0/ingest/swing_ingest.h/.cpp`
-* `src/shared/ring_spsc.h` (if not already)
-* `src/shared/interfaces.h` → referenced but not modified
-
-**Behaviors**
-
-* Drain queue, update `LatestState`:
-
-  * last record
-  * monotonic checks: `swing_id` must increase; `pps_id` non-decreasing
-  * update counters from `flags`
-  * count `gps_state` occurrences
-* Tracks queue health (optional): “max drained per loop”, “missed swings” estimate if detectable
+**Behavior**
+- Validate monotonic `swing_id`/`pps_id`; track anomalies.
+- Update `LatestState` and counters.
 
 **Acceptance**
-
-* Under synthetic load (e.g., 60 swings/sec), Core0 drains without overflow for hours (assuming Core1 is healthy).
-* Counters increase appropriately when input flags injected (e.g., ring overflow).
+- Under synthetic load (e.g., 60 swings/sec), no queue overflows with all other modules enabled.
 
 ---
 
-## Task 3 — Processing: conversions + lightweight rolling stats
+## Task 3 — Stable-first scale + conversions
+**Goal:** Convert cycles → seconds only when safe, avoiding prototype instability.
 
-**Goal:** Provide derived values for OLED and HTTP (not heavy analysis).
+**Deliverables**
+- `src/core0/processing/scale.*`
+- `src/core0/processing/conversions.*`
 
-**Files**
+**Policy (must)**
+- Update `pps_cycles_last_good` only when `pps_new==1` AND `gps_state==LOCKED` AND PPS passes quality gates.
+- In `ACQUIRING`/`BAD_JITTER`, hold last-good scale; do not chase.
+- In `NO_PPS` without last-good, mark derived seconds invalid.
 
-* `src/core0/processing/conversions.h/.cpp`
-* `src/core0/processing/aggregates.h/.cpp` (optional but useful)
-* `src/shared/time_utils.h` (wrap-safe helpers)
+---
 
-**Behaviors**
+## Task 4 — Rolling stats engine (in RAM) + `StatsRecordV1`
+**Goal:** Maintain rolling windows for OLED and `/stats`, and emit `StatsRecordV1` snapshots.
 
-* Convert `SwingRecordV1` raw cycles into:
-
-  * period in seconds/us (using current/last-good scale if/when you implement it)
-  * `pps_age_ms` from `pps_age_cycles`
-* Optional rolling stats:
-
-  * rolling mean/median period
-  * variability proxy (MAD, IQR, stddev over last N)
-  * counts by `gps_state`
+**Deliverables**
+- `src/core0/stats/stats_engine.*`
 
 **Acceptance**
-
-* Deterministic computation (no heap churn, bounded CPU).
-* No dependency on SD/WiFi/OLED.
-* Produces stable values even through `HOLDOVER/NO_PPS` (by using raw cycles and freshness markers).
+- Bounded CPU and memory; no heap churn in hot paths.
+- Uses stable-first scale policy for seconds-based stats.
 
 ---
 
-## Task 4 — Sensors: environmental polling + cache
-
-**Goal:** Port the UNO `Sensors` behavior into Core0.
-
-**Files**
-
-* `src/core0/sensors/sensors.h/.cpp`
-* `src/core0/sensors/sht41.h/.cpp`
-* `src/core0/sensors/bmp280.h/.cpp` (or combined)
-
-**Behaviors**
-
-* Initialize I2C, detect sensors, record availability flags
-* Poll at fixed cadence (e.g., 1 Hz)
-* Update `LatestState.env` (T/H/P + timestamp)
-* Failure handling: if sensor missing, keep running and expose status
+## Task 5 — Sensors: environmental polling + cache
+**Deliverables**
+- `src/core0/sensors/*`
 
 **Acceptance**
-
-* Runs with either sensor missing (no crash).
-* Values available via OLED and HTTP endpoints.
-* Poll cadence stable and non-blocking.
+- Missing sensors do not crash the system; status reflects missing devices.
 
 ---
 
-## Task 5 — Storage: SD mount + CSV logger + rotation + flush policy
+## Task 6 — SD logging: raw + stats
+**Goal:** Two separate CSV logs.
 
-**Goal:** Replace `SDLogger` + “CSV header from Nano” with direct `SwingRecordV1` logging.
-
-**Files**
-
-* `src/core0/storage/sd_manager.h/.cpp`
-* `src/core0/storage/csv_logger.h/.cpp`
-* `src/core0/storage/file_rotate.h/.cpp` (optional)
-
-**Behaviors**
-
-* SD init/mount with robust error reporting
-* Create log file (daily or size-based rotation)
-* Write header including:
-
-  * `schema_version=1,units=cycles`
-  * column headers matching `docs/core1/logging-schema.md`
-* Append one row per swing:
-
-  * `SwingRecordV1` fields + optional env fields (if you want in same CSV)
-* Buffer writes; flush every N lines or M seconds
-* If SD fails: continue running; surface error in `/status`
+**Deliverables**
+- `src/core0/storage/raw_logger.*` (one row per swing: `SwingRecordV1` + env)
+- `src/core0/storage/stats_logger.*` (cadenced: `StatsRecordV1` + env)
+- `src/core0/storage/sd_manager.*` (mount, rotate, flush policy)
 
 **Acceptance**
-
-* Produces a valid CSV readable by your post-processing suite.
-* Rotation works (new file at midnight or size threshold).
-* Pulling SD mid-run doesn’t deadlock; SD removal is visible in `/status`.
+- Raw log schema matches `docs/core1/logging-schema.md` + env tail.
+- Stats log schema matches `StatsRecordV1` in `docs/shared/interfaces.md`.
+- SD removal mid-run does not deadlock; flags/counters indicate failure.
 
 ---
 
-## Task 6 — Networking: WiFi (STA/AP) + HTTP server routes
+## Task 7 — Networking & HTTP
+**Deliverables**
+- `src/core0/net/*`
 
-**Goal:** Port the UNO `HttpServer` capabilities in a cleaner “LatestState serialization” design.
-
-**Files**
-
-* `src/core0/net/net_manager.h/.cpp`
-* `src/core0/net/http_server.h/.cpp`
-* `src/core0/net/routes_*.h/.cpp` (optional split)
-* `src/core0/config/config_store.h/.cpp` (WiFi creds etc.)
-
-**Behaviors**
-
-* WiFi:
-
-  * STA preferred (connect using stored creds)
-  * optional AP fallback/config portal if STA fails
-* HTTP endpoints (minimum useful set):
-
-  * `/latest` (JSON): last swing record + derived values + env
-  * `/status` (JSON): counters, `gps_state` counts, SD/WiFi health, uptime
-  * `/stats` (JSON): rolling aggregates if implemented
-  * `/files` (HTML or JSON): list log files
-  * `/download?name=...` stream file
-  * (optional) `/wifi` GET/POST for config portal
+**Endpoints (baseline)**
+- `/latest` (JSON) from `LatestState`
+- `/status` (JSON)
+- `/stats` (JSON `StatsRecordV1`)
+- `/files`, `/download`
 
 **Acceptance**
-
-* With SD+OLED running, HTTP remains responsive.
-* `/latest` always returns quickly and never blocks on SD.
-* WiFi reconnect logic works after AP/router bounce.
+- Handlers never touch I2C; SD reads only inside `/download` and chunked.
 
 ---
 
-## Task 7 — OLED UI: pages driven by `LatestState`
-
-**Goal:** Port the UNO `Display` module but make it purely “render from LatestState”.
-
-**Files**
-
-* `src/core0/ui/oled.h/.cpp`
-* `src/core0/ui/pages.h/.cpp`
-
-**Behaviors**
-
-* Splash screen + runtime pages
-* Page set (suggested):
-
-  * Timing: latest period/rate, `gps_state`, PPS age
-  * Environment: T/H/P
-  * Health: SD ok?, WiFi status, drops/overflows counters
-* Refresh cadence (e.g., 2–10 Hz)
-* No I/O in render path except the display write
+## Task 8 — OLED UI
+**Deliverables**
+- `src/core0/ui/oled.*`
 
 **Acceptance**
-
-* Never blocks ingest noticeably (no long redraw loops).
-* Pages update correctly with live data and state transitions.
+- Reads only `LatestState`.
+- Shows latest + rolling summary + health.
 
 ---
 
-## Task 8 — Config store: persistent settings (WiFi creds + app tunables)
+## Task 9 — Config store + tunables interface
+**Goal:** Persist and edit configuration safely.
 
-**Goal:** Replace UNO EEPROM config logic with RP2040-friendly persistent storage.
-
-**Files**
-
-* `src/core0/config/config_store.h/.cpp`
-* `src/core0/config/config_defaults.h`
-
-**Behaviors**
-
-* Store/load:
-
-  * WiFi SSID/pass
-  * logging mode (on/off, rotate daily/size)
-  * sensor poll interval, display page mode
-* Version + CRC
-* Safe defaults on corruption
+**Deliverables**
+- `src/core0/config/config_store.*` (version + CRC)
+- `src/core0/config/cli_serial.*` (minimal CLI)
+- optional `/config` endpoint
 
 **Acceptance**
-
-* Corrupt config falls back to defaults.
-* Changing WiFi creds persists across reboot.
-* Config version bump doesn’t brick previous installs.
+- Corrupt config falls back to defaults with a visible reset counter.
+- `get/set/save/load/defaults` works over Serial.
 
 ---
 
-## Task 9 — Diagnostics + health counters surfaced everywhere
+## Task 10 — Integration stress harness
+**Goal:** Prove ingest remains healthy under SD + WiFi + OLED load.
 
-**Goal:** Replace `MemoryMonitor` and unify health reporting.
-
-**Files**
-
-* `src/core0/diag/health.h/.cpp`
-* integrate into `/status` and OLED health page
-
-**Behaviors**
-
-* Track:
-
-  * queue drain counts, missed/overrun indicators
-  * SD errors, last flush time, bytes written
-  * WiFi status, reconnect count
-  * heap/free RAM, uptime
-* Export to:
-
-  * `/status`
-  * OLED health page
+**Deliverables**
+- `src/core0/test/integration_mode.*` (or build flag)
 
 **Acceptance**
-
-* Health stays truthful under failures (SD removed, WiFi down).
-* No “silent” failure modes.
-
----
-
-## Task 10 — Integration test harness on-device
-
-**Goal:** A single “integration sketch mode” that proves Core0 is robust under load.
-
-**Files**
-
-* `src/core0/test/integration_mode.h/.cpp` (or build flag in `core0_main.cpp`)
-
-**Behaviors**
-
-* Option A: if Core1 not ready, generate synthetic `SwingRecordV1` at configurable rate.
-* Stress:
-
-  * SD writing enabled
-  * HTTP polled continuously
-  * OLED refreshing
-  * sensors polling
-* Record stability: zero queue overflows at target rates
-
-**Acceptance**
-
-* Runs for 12+ hours at representative swing rates without capture/ingest degradation.
-* Produces log files, HTTP responsive, OLED updates.
-
----
-
-## Suggested execution order (minimize rework)
-
-1. Task 0–2 (skeleton + LatestState + ingest)
-2. Task 5 (SD logging) + Task 6 (HTTP `/latest` + `/status`)
-3. Task 4 (sensors) + Task 7 (OLED)
-4. Task 8 (config) + STA/AP behavior
-5. Task 3 (derived stats) + Task 9/10 (diagnostics + stress harness)
-
----
+- Runs for hours at representative swing rates with no queue overflows and sane logs.

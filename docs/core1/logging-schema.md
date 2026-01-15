@@ -1,77 +1,40 @@
-# Logging schema (preferred): single combined record (one row per swing)
+# Core1 Logging Schema (Raw CSV)
 
-This is the **authoritative** logging format for the RP2040 dual-core rewrite.
+This document defines the **authoritative** raw swing record schema written by Core0.
+Core1 defines the record; Core0 writes it to SD.
 
-Capture is unified **PIO→DMA→RAM ring** for pendulum + PPS; the log stores the resulting per-swing records.
-
-## Goals
-- **Raw-first:** store raw swing timing in **cycles** (u32), not converted units.
-- **Alignment:** include PPS ID + freshness so post-processing can reconstruct the PPS stream and detect transitions.
-
-## Record: `SwingRecordV1` (one row per swing)
-
-### Swing raw (cycles)
-- `tick_block_cycles` (u32)
-- `tick_cycles` (u32)
-- `tock_block_cycles` (u32)
-- `tock_cycles` (u32)
-
-### Alignment / epoch
-- `swing_id` (u32, monotonic)
-- `pps_id` (u32, last PPS edge seen; monotonic)
-- `pps_age_cycles` (u32, cycles since last PPS edge)  
-  *(Alternative: `pps_age_ms` if you prefer, but cycles is preferred.)*
-
-### PPS raw (meaningful when `pps_new==1`)
-- `pps_interval_cycles_raw` (u32, cycles between consecutive PPS edges)
-- `pps_new` (u8/bool 0–1) — **1 only on the first swing after a PPS edge**  
-  Enables extracting the true PPS series from swing rows.
-
-### State / flags
-- `gps_state` (u8 enum; see below)
-- `flags` (u16 bitfield; see below)
-
+Core0 may append environmental sensor fields at the end of each row.
 
 ---
 
-## `gps_state` enum (authoritative)
-- `0 NO_PPS`
-- `1 ACQUIRING`
-- `2 LOCKED`
-- `3 HOLDOVER`
-- `4 BAD_JITTER`
+## Raw record: `SwingRecordV1` (cycles)
 
-### Precedence rules (avoid ambiguity)
-1. If PPS is absent → `HOLDOVER` if a last-good scale exists, else `NO_PPS`.
-2. If PPS is present → `BAD_JITTER` if quality too poor; else `ACQUIRING` until stable; else `LOCKED`.
+See `docs/shared/interfaces.md` for the struct definition.
 
+### Header (recommended)
+Line 1:
+- `raw_schema_version=1,units=cycles`
 
----
+Line 2 (columns, v1):
+- `swing_id,pps_id,pps_age_cycles,pps_new,pps_interval_cycles_raw,tick_block_cycles,tick_cycles,tock_block_cycles,tock_cycles,gps_state,flags`
 
-## `flags` bitfield (v1)
-- bit 0: `FLAG_DROPPED` — one or more events/samples dropped since last record
-- bit 1: `FLAG_GLITCH` — invalid edge pattern / reconstruction reset
-- bit 2: `FLAG_CLAMP` — correction/scale clamp applied
-- bit 3: `FLAG_RING_OVERFLOW` — DMA ring overrun occurred
-- bit 4: `FLAG_PPS_OUTLIER` — PPS interval rejected as outlier (Hampel/median)
-- bit 5: `FLAG_PPS_MISSING` — PPS expected but not observed within horizon for this swing
-- bit 6: `FLAG_TIME_INVALID` — Core0 time-of-day not valid (no NTP/time source yet)
-- bit 7: `FLAG_SD_ERROR` — SD logging currently unavailable or write failure detected
-- bit 8: `FLAG_WIFI_DOWN` — WiFi currently disconnected/unavailable (STA and/or AP)
-- bit 9: `FLAG_SENSOR_MISSING` — one or more configured environmental sensors missing or not responding
-- bit 10: `FLAG_OLED_ERROR` — OLED init/write failure; UI disabled or degraded
-- bits 11–15: reserved
+### Env tail (Core0 appends)
+If enabled, Core0 appends:
+- `temp_c,rh_pct,press_hpa`
+
+If missing sensors, Core0 logs empty fields.
 
 ---
 
-## CSV header (recommended)
-Version everything explicitly:
+## Semantics
+- `swing_id` increments once per emitted swing record.
+- `pps_id` increments on PPS edges; `pps_new==1` only on the first swing after a PPS edge.
+- `pps_interval_cycles_raw` is non-zero only when `pps_new==1` (otherwise 0).
+- `gps_state` is the authoritative 5-state enum.
+- `flags` is a 16-bit bitfield (see `docs/shared/interfaces.md` appendix).
 
-`schema_version=1,units=cycles`
+---
 
-Then:
-
-`swing_id,pps_id,pps_age_cycles,pps_new,pps_interval_cycles_raw,tick_block_cycles,tick_cycles,tock_block_cycles,tock_cycles,gps_state,flags`
-
-Notes:
-- When `pps_new==0`, log `pps_interval_cycles_raw=0` (preferred).
+## Forward compatibility
+- Unknown columns at the end of a row should be ignored by readers.
+- If any field meaning changes, bump `raw_schema_version`.

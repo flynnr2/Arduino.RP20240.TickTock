@@ -10,13 +10,23 @@ OLED rendering is a presentation layer over `LatestState`. It must not block ing
 
 ---
 
+## Data sources
+OLED reads only from `LatestState`, which includes:
+- last `SwingRecordV1`
+- derived conversions using the **stable-first** PPS scale (`pps_cycles_last_good`)
+- rolling aggregates (mean/median + variability proxies)
+- health counters (SD/WiFi/sensors)
+
+---
+
 ## Page model
 Implement a small set of pages that can rotate automatically and/or via a button:
 
-### Page 1 — Timing
+### Page 1 — Timing (latest + summary)
 - `gps_state`
-- latest period (derived from cycles)
-- PPS age (`pps_age_ms` or equivalent)
+- latest period (cycles and seconds if scale valid)
+- PPS age (`pps_age_ms` or `pps_age_cycles`)
+- rolling mean period (seconds) + variability proxy
 - key flags (overflow/dropped/glitch indicators)
 
 ### Page 2 — Environment
@@ -26,9 +36,10 @@ Implement a small set of pages that can rotate automatically and/or via a button
 - sensor availability indicators
 
 ### Page 3 — Health
-- SD: mounted?, current file, last error (short)
+- SD: mounted?, current raw/stats file, last error (short)
 - WiFi: mode (STA/AP), RSSI
 - counts: ring overflow, dropped, glitch, PPS outliers
+- config version/reset count (optional)
 
 Optional:
 - page for IP address / AP SSID
@@ -43,9 +54,9 @@ Optional:
 ---
 
 ## Error surfacing
-- If SD unavailable: show “SD: ERR” and an error code.
-- If WiFi down: show “WiFi: DOWN” and mode.
-- If sensors missing: show “SHT41: —” etc.
+- If SD unavailable: show “SD: ERR” and an error code; set `FLAG_SD_ERROR`.
+- If WiFi down: show “WiFi: DOWN” and mode; set `FLAG_WIFI_DOWN`.
+- If sensors missing: show “SHT41: —” etc.; set `FLAG_SENSOR_MISSING`.
 
 ---
 

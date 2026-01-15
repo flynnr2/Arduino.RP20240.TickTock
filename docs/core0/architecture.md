@@ -2,11 +2,12 @@
 
 Core0 is the **application layer**. It must never participate in time‑critical edge capture. Its job is to:
 - ingest Core1’s per‑swing records (`SwingRecordV1`)
-- enrich/compute presentation values (seconds, ppm/day, rolling stats)
+- enrich/compute presentation values (seconds, rolling stats)
 - poll environmental sensors
-- log to SD
-- serve HTTP (and optionally AP) endpoints
+- log to SD (raw + stats)
+- serve HTTP (and optionally AP)
 - drive the OLED display
+- host configuration + tunables (persistence + Serial/HTTP interfaces)
 
 Core0 must be **non-blocking** and robust under SD and WiFi variability: if something stalls, we degrade *presentation/logging*, not capture.
 
@@ -17,11 +18,13 @@ Core0 must be **non-blocking** and robust under SD and WiFi variability: if some
 ### Inputs
 - **From Core1:** `SwingRecordV1` via SPSC queue (see `docs/shared/interfaces.md`)
 - **Sensors:** temperature, humidity, pressure (SHT41/BMP280, etc.)
-- **Config:** persisted settings (WiFi credentials, logging intervals, display mode, etc.)
+- **Config:** persisted settings (WiFi credentials, logging/stats intervals, thresholds)
 
 ### Outputs
-- **SD card:** CSV log (append-only; versioned header)
-- **Network:** HTTP endpoints (`/status`, `/latest`, `/stats`, `/files`/downloads)
+- **SD card:**
+  - Raw CSV: `SwingRecordV1` + env (authoritative)
+  - Stats CSV: `StatsRecordV1` at lower cadence (derived)
+- **Network:** HTTP endpoints (`/status`, `/latest`, `/stats`, `/files`/downloads, optional `/config`)
 - **OLED:** human-facing “latest + summary” screens
 - **Diagnostics:** counters for queue overruns, SD errors, WiFi reconnects
 
@@ -29,40 +32,59 @@ Core0 must be **non-blocking** and robust under SD and WiFi variability: if some
 
 ## The Core0 “center”: `LatestState`
 
-Core0 should maintain a single in-memory snapshot that everything reads:
+Core0 maintains a single in-memory snapshot that everything reads:
 - last `SwingRecordV1`
 - derived values for UI and APIs:
-  - `period_s`, `period_us` (from cycles using current/last-good scale)
-  - `rate_ppm`, `rate_s_per_day` (optional)
+  - `period_s` / `period_us` (derived from cycles using the **last-good PPS scale**)
   - `pps_age_ms` (derived from `pps_age_cycles`)
   - rolling aggregates (mean/median, variability proxies)
 - quality counters:
   - counts by `gps_state`
-  - ring overflow/dropped/glitch counts (from `flags`)
+  - counts by `flags` bits
   - SD error counters, WiFi reconnect counters
 - last environmental sample + timestamp
+- current config summary (version, key tunables)
 
 **Rule:** HTTP handlers and OLED rendering read `LatestState`; they do not compute or block.
 
 ---
 
+## Stable-first conversion scale (avoid prototype instability)
+
+Core0 may convert cycles to seconds for presentation and stats using a PPS-derived scale:
+
+- Maintain `pps_cycles_last_good` (last-good PPS interval in cycles).
+- Update `pps_cycles_last_good` **only when**:
+  - `pps_new==1`, and
+  - `gps_state == LOCKED`, and
+  - PPS passes quality gates (outlier reject / clamp).
+
+Policy:
+- In `ACQUIRING` and `BAD_JITTER`: **do not chase** PPS jitter. Hold `pps_cycles_last_good` constant.
+- In `HOLDOVER`: continue using the held last-good scale.
+- In `NO_PPS` with no last-good scale: derived seconds are invalid (cycles remain valid).
+
+This keeps raw measurement clean and prevents the “fast-but-jittery” acquiring behavior seen in the prototype.
+
+---
+
 ## Scheduling model (no RTOS required)
 
-A simple cooperative scheduler in `loop()` is enough:
+A simple cooperative scheduler in `loop()` is enough.
 
 ### High priority (every loop)
 - **Drain Core1 queue** quickly and update `LatestState`
-  - keep this tight; do not log or render inside the drain loop
+  - keep this tight; do not log, poll sensors, or render inside the drain loop
 
 ### Periodic jobs (time-sliced)
 - **Sensors** (e.g., 1 Hz): poll SHT41/BMP280; update `LatestState.env`
 - **OLED** (e.g., 2–10 Hz): render current `LatestState`
-- **HTTP** (every loop): call server “tick” / handle client requests non-blocking
-- **SD logging**:
-  - append one CSV row per `SwingRecordV1`
-  - buffer writes; flush every N rows or M seconds
-  - rotate file daily or by size
-- **Housekeeping** (e.g., 0.2 Hz): update free space, heap stats, uptime, etc.
+- **HTTP** (every loop): handle client requests non-blocking
+- **SD logging**
+  - raw: append one row per swing (buffered)
+  - stats: emit `StatsRecordV1` at cadence (e.g., 10 s) (buffered)
+  - flush policy (lines/seconds) and rotation policy (daily/size)
+- **Housekeeping** (e.g., 0.2 Hz): free space, heap stats, uptime, etc.
 
 **Design goal:** A slow SD write or WiFi burst should not prevent draining the Core1 queue for long.
 
@@ -71,64 +93,45 @@ A simple cooperative scheduler in `loop()` is enough:
 ## Module boundaries (recommended)
 
 ### 1) Ingest
-Responsibilities:
-- pop `SwingRecordV1` from queue
-- validate monotonic fields (`swing_id`, `pps_id` non-decreasing)
-- maintain counters (drops/overflows)
-- store into `LatestState`
+- Pop `SwingRecordV1` from queue
+- Validate monotonic fields (`swing_id`, `pps_id`)
+- Maintain counters and update `LatestState`
 
-### 2) Processing / derived values
-Responsibilities:
-- convert cycles to seconds using the current scale
-- compute rolling stats (optional, bounded CPU)
-- derive display-friendly values (formatted strings, units)
-
-Note: “corr_*” is intentionally omitted from the schema; compute anything needed offline or in Core0 derived stats.
+### 2) Processing / rolling stats
+- Convert cycles to seconds using `pps_cycles_last_good` (stable-first)
+- Maintain rolling windows for OLED and `/stats`
+- Populate `StatsRecordV1` snapshots
 
 ### 3) Sensors
-Responsibilities:
-- initialize buses (I2C/SPI), detect devices, poll at fixed cadence
-- handle missing sensors gracefully (set flags and continue)
+- Init buses, detect devices, poll at cadence
+- Handle missing sensors gracefully
 
 ### 4) Storage (SD)
-Responsibilities:
-- mount/init SD
-- open log file, write header (schema version, units)
-- append rows; flush policy; rotation policy
-- handle failure: if SD unavailable, continue running and surface error in `/status`
+- Mount/init SD
+- Write raw CSV and stats CSV (buffered, rotated)
+- If SD unavailable: continue running and surface error in `/status`
 
 ### 5) Networking (WiFi + HTTP)
-Responsibilities:
-- WiFi state machine: STA preferred; AP fallback/config page if needed
-- HTTP endpoints:
-  - `/latest` (JSON): last `SwingRecordV1` + derived values + env
-  - `/status` (JSON): counters + health + WiFi/SD state
-  - `/stats` (JSON): rolling aggregates, counts by `gps_state`
-  - `/files` (HTML/JSON): list log files, download links
+- WiFi state machine: STA preferred; AP fallback/config if needed
+- Endpoints: `/latest`, `/status`, `/stats`, `/files`, `/download`, optional `/config`
 
 ### 6) OLED UI
-Responsibilities:
-- render a small set of “pages” (latest period/rate, gps_state, env, SD/WiFi status)
-- page rotation / button input (if present)
-- never block on IO
+- Render “latest + summary” pages from `LatestState`
+- Never block on I/O
+
+### 7) Config + tunables interface
+- Persistent config store (version + CRC)
+- Serial CLI (minimal): `status`, `get/set`, `save/load/defaults`
+- Optional HTTP config portal (`/config`)
 
 ---
 
 ## Failure policy (important)
 - **Capture never depends on SD/WiFi/OLED.**
 - If Core0 falls behind:
-  - record it (queue depth/high-water or “missed swings” counter if applicable)
-  - keep `/status` truthful
-  - recover automatically (e.g., reopen SD file, reconnect WiFi)
+  - record it (queue health counters)
+  - reduce optional work (OLED refresh, stats cadence, HTTP extras)
+  - recover automatically (reopen SD, reconnect WiFi)
 
----
+See `docs/core0/error-policy.md`.
 
-## Integration contract with Core1
-Core0 must treat `SwingRecordV1` as the **truth**:
-- `gps_state` is authoritative (5-state enum)
-- `pps_new` marks a new PPS interval sample
-- `pps_age_cycles` expresses PPS freshness (for holdover UX)
-
-See:
-- `docs/shared/interfaces.md`
-- `docs/core1/logging-schema.md`

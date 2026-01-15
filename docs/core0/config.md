@@ -13,7 +13,12 @@ Core0 stores persistent configuration such as WiFi credentials and runtime tunab
 
 On CRC failure:
 - load defaults
-- expose “config_reset_count” in `/status`
+- increment `config_reset_count`
+- surface this in `/status`
+
+Implementation options on RP2040:
+- EEPROM emulation (arduino-pico) **or**
+- LittleFS with an atomic write pattern (write-new + rename).
 
 ---
 
@@ -31,7 +36,14 @@ On CRC failure:
 - `flush_lines`
 - `flush_ms`
 - `max_file_size_bytes` (if size rotation)
+- `time_valid_max_age_s` (NTP time staleness for daily rotation)
 - `logs_dir` (optional constant)
+
+### Stats / processing
+- `stats_enabled`
+- `stats_emit_ms` (cadence for stats CSV snapshots; e.g., 10s)
+- rolling window sizes (by swings and/or seconds)
+- PPS quality gates (outlier thresholding) used by Core0 for stable-first scale updates
 
 ### Sensors/UI
 - `sensor_poll_ms`
@@ -45,8 +57,20 @@ On CRC failure:
 
 ---
 
-## Update mechanism
-- via HTTP config portal (`/wifi` and/or `/config`) or hardcoded defaults during bring-up.
+## Tunables interface
+
+### Serial CLI (recommended for bring-up)
+Provide a minimal command interface on Core0:
+- `status` — print health + config summary + last gps_state + last pps_age
+- `get <key>`
+- `set <key> <value>`
+- `save` / `load` / `defaults`
+- `help`
+
+This is the fastest way to iterate without committing to a full web UI.
+
+### HTTP config (optional)
+- `/config` GET/POST mirrors the same keys as the Serial CLI.
 - After changing credentials: reconnect or reboot.
 
 ---
@@ -55,3 +79,4 @@ On CRC failure:
 - Corrupt config falls back to defaults without bricking.
 - WiFi creds persist across reboot.
 - Version bump is handled (migrate or reset with clear status).
+- Serial `get/set/save/load/defaults` works and is reflected in `/status`.

@@ -85,3 +85,16 @@ Raw logging (cycles) remains authoritative regardless of scale validity.
 - Pull SD during run: capture and ingest continue; `/status` reports SD error; OLED shows SD ERR.
 - Turn off AP/router: device continues; reconnect attempts do not starve ingest.
 - Remove a sensor: device continues; env fields marked missing/invalid.
+
+
+---
+
+## Degraded mode (backpressure)
+If queue pressure rises or `FLAG_RING_OVERFLOW` occurs:
+- record it (counters)
+- reduce optional work in priority order:
+  1. lower OLED refresh rate
+  2. reduce stats compute work/window sizes
+  3. reduce stats CSV cadence
+  4. reduce SD flush frequency (keep bounded)
+- never slow Core1 capture

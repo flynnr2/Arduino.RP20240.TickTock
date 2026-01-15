@@ -35,3 +35,26 @@ Use the `flags` bit assignments in `docs/shared/interfaces.md`. Core0 should set
 
 ## Degradation transparency
 If any subsystem is degraded, `/status` and OLED should reflect it immediately.
+
+---
+
+## Operational constraints (for future reference)
+### Firmware identity (recommended)
+Expose a stable identity in `/status` and log headers:
+- `fw_version` (semantic version or build tag)
+- `build_time_utc` (or build timestamp)
+- `git_hash` (short hash if available)
+
+### Loss / overflow budget
+In addition to last flags, track cumulative and rate-based indicators:
+- `lost_swings_total` (if tracked)
+- `ring_overflow_events`
+- `dropped_events_total`
+- optional: per-minute rate (computed over a small rolling window)
+
+### Environmental sampling timing
+Environmental values in logs and `/latest` are the **most recent cached sample** at the time of emission/log write.
+(They are typically polled at ~1 Hz; they are not phase-aligned to swing edges.)
+
+### Operational envelope (planning)
+Document expected maximum swing/edge rates (e.g., fast pendulum scenarios) so buffer sizing and SD policies can be validated against a target.

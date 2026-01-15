@@ -19,6 +19,7 @@ This folder defines the plan and data contracts for the Nano RP2040 Connect dual
 - `core1/test-plan.md` — capture and correctness tests
 
 ### Core0
+- `core0/processing.md` — DSP rules: stable-first scale, sample gating, windows, robust stats, sanity checks, wrap policy
 - `core0/architecture.md` — module boundaries and stable-first policy
 - `core0/tasks.md` — Codex-ready work breakdown
 - `core0/storage.md` — SD logging strategy (raw + stats)

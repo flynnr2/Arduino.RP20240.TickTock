@@ -44,7 +44,7 @@ Returns:
 - uptime, heap/free memory, config version/hash
 
 ### `GET /stats` (JSON)
-Returns the current rolling statistics snapshot as `StatsRecordV1` (see `docs/shared/interfaces.md`), plus any formatted fields useful for UI.
+Returns the current rolling statistics snapshot as `StatsRecordV1` (computed primarily from `usable_for_stats` samples per `docs/core0/processing.md`) (see `docs/shared/interfaces.md`), plus any formatted fields useful for UI.
 
 Notes:
 - `StatsRecordV1` is derived and should use the **stable-first** PPS scale policy (do not chase in `ACQUIRING`).

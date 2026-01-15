@@ -26,7 +26,7 @@ Implement a small set of pages that can rotate automatically and/or via a button
 - `gps_state`
 - latest period (cycles and seconds if scale valid)
 - PPS age (`pps_age_ms` or `pps_age_cycles`)
-- rolling mean period (seconds) + variability proxy
+- rolling mean period (seconds) + variability proxy (prefer median/MAD)
 - key flags (overflow/dropped/glitch indicators)
 
 ### Page 2 — Environment
@@ -64,3 +64,11 @@ Optional:
 - OLED updates smoothly under WiFi and SD load.
 - OLED code does not perform sensor reads or SD operations.
 - A missing OLED does not break the system (UI can be disabled).
+
+
+---
+
+## Variability display recommendation
+For pendulums, occasional glitches are common; prefer robust metrics:
+- show **median period** and **MAD** (or MAD-derived ppm) as the primary variability indicator
+- mean/std can be secondary

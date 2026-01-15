@@ -135,3 +135,24 @@ Storage supports:
 - Rotation works as configured.
 - Removing SD mid-run does not deadlock; errors are visible in `/status` and OLED.
 - Under sustained load (WiFi + OLED + sensors), logging remains stable or degrades gracefully without capture impact.
+
+
+---
+
+## Stats computation reference
+Stats are defined in `docs/shared/interfaces.md` (`StatsRecordV1`) and computed according to `docs/core0/processing.md` (windows, robust statistics, usability gating).
+
+---
+
+## Appendix: Logging metadata and sampling notes
+### Log header metadata (recommended)
+Include a metadata line that helps long experiments remain reproducible:
+- `fw_version=...`
+- `git_hash=...` (if available)
+- `build_time_utc=...`
+
+Example (raw):
+- `raw_schema_version=1,units=cycles,fw_version=...,git_hash=...,build_time_utc=...`
+
+### Environmental sampling note
+Env fields appended to raw/stats rows are the **latest cached** sensor readings at the time the row is written.

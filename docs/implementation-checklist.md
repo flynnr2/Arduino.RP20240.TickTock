@@ -46,6 +46,7 @@ Use this checklist to drive Codex and keep changes incremental and testable.
 ---
 
 ## Stage 4 — Stable-first scale + conversions (`src/core0/processing/`)
+(Defined in `docs/core0/processing.md`)
 - [ ] Maintain `pps_cycles_last_good`
 - [ ] Update last-good scale **only** when `gps_state==LOCKED` and PPS passes quality gates
 - [ ] In `ACQUIRING`/`BAD_JITTER`: hold last-good scale (do not chase)
@@ -55,6 +56,7 @@ Use this checklist to drive Codex and keep changes incremental and testable.
 ---
 
 ## Stage 5 — Rolling stats (`src/core0/stats/`)
+(Windows, robust metrics, and `usable_for_stats` gating are defined in `docs/core0/processing.md`.)
 - [ ] Maintain rolling windows in RAM (for OLED + `/stats`)
 - [ ] Populate `StatsRecordV1` snapshot (see `docs/shared/interfaces.md`)
 - [ ] Ensure bounded CPU/memory; no heap churn in hot paths

@@ -50,6 +50,8 @@ Core0 is the application layer: ingest Core1 records, compute stable derived val
 ---
 
 ## Task 3 — Stable-first scale + conversions
+
+(See `docs/core0/processing.md` for the DSP spec.)
 **Goal:** Convert cycles → seconds only when safe, avoiding prototype instability.
 
 **Deliverables**
@@ -64,6 +66,8 @@ Core0 is the application layer: ingest Core1 records, compute stable derived val
 ---
 
 ## Task 4 — Rolling stats engine (in RAM) + `StatsRecordV1`
+
+(See `docs/core0/processing.md` for windowing, robust stats, and `usable_for_stats` gating.)
 **Goal:** Maintain rolling windows for OLED and `/stats`, and emit `StatsRecordV1` snapshots.
 
 **Deliverables**
@@ -139,6 +143,8 @@ Core0 is the application layer: ingest Core1 records, compute stable derived val
 ---
 
 ## Task 10 — Integration stress harness
+
+Include fault injection and backpressure validation (see `docs/core0/processing.md` degraded mode rules).
 **Goal:** Prove ingest remains healthy under SD + WiFi + OLED load.
 
 **Deliverables**

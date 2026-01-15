@@ -135,3 +135,10 @@ A simple cooperative scheduler in `loop()` is enough.
 
 See `docs/core0/error-policy.md`.
 
+
+
+---
+
+## Processing specification
+Core0’s DSP/derived rules (stable-first scale, sample gating, windows, robust stats, sanity checks, wrap policy) are defined in:
+- `docs/core0/processing.md`

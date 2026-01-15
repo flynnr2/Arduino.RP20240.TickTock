@@ -40,3 +40,42 @@ Pick a tick so quantization is comfortably below your timing error budget.
 - `dropped_events == 0` at expected edge rates over multi-hour runs.
 - Under load, capture timing variance does not degrade beyond the agreed threshold.
 - Any overrun produces explicit counters and is visible via `/status` and logs.
+
+---
+
+## Appendix: Operational constraints & invariants
+This appendix documents invariants and constraints that future firmware revisions should preserve.
+
+### Capture tick rate
+Pick and document a single PIO capture tick rate (examples):
+- **1 MHz**: 1 µs resolution, 32-bit wrap ≈ 4295 s
+- **10 MHz**: 0.1 µs resolution, 32-bit wrap ≈ 429 s
+
+The tick rate affects:
+- `pps_age_cycles` → `pps_age_ms` conversion
+- “plausible” pulse-width sanity checks
+- wrap horizons for any timeouts
+
+### Event ties and ordering
+If PPS and pendulum edges occur within the same capture tick, ties are valid.
+To keep reconstruction deterministic:
+- enqueue tied events in a fixed order (recommend: **PPS before pendulum**)
+- downstream code must accept `dt == 0` and not assume strict ordering
+
+### Reconstruction failure policy (Core1)
+If an unexpected edge pattern is detected while assembling a `SwingRecordV1`:
+- set `FLAG_GLITCH`
+- resync by discarding events until the next “known good” boundary (e.g., next pendulum rising edge)
+- prefer **emitting** a record with `FLAG_GLITCH` rather than skipping records (skips complicate downstream alignment)
+
+### Maximum supported event rate (planning constraint)
+Document expected maximum rates so ring sizing and buffer policies remain justified. Example planning target:
+- up to **20 swings/s** (fast pendulum case)
+- up to **80 edges/s** (including both edges + PPS)
+
+Adjust as needed for your “future clock” envelope; keep a safety margin.
+
+### Hardware edge conditioning assumption
+Capture quality depends on edge quality:
+- if edges are slow/noisy, true jitter will dominate regardless of capture method
+- prefer Schmitt/comparator conditioning if wiring or sensor output is marginal

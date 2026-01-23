@@ -55,7 +55,13 @@ enum CsvField {
   CF_COUNT
 };
 
-enum GpsStatus : uint8_t { NO_PPS = 0, ACQUIRING = 1, LOCKED = 2 };
+enum GpsStatus : uint8_t {
+  NO_PPS     = 0,  // never seen PPS or PPS absent beyond horizon; no valid epoch
+  ACQUIRING  = 1,  // PPS present but not yet stable enough to trust
+  LOCKED     = 2,  // PPS present and stable; trusted regime
+  HOLDOVER   = 3,  // PPS absent, but last-good scale exists and is being held
+  BAD_JITTER = 4,  // PPS present but too noisy/out-of-family to trust
+};
 static_assert(sizeof(GpsStatus) == 1, "GpsStatus must be 1 byte");
 
 // 2) Command protocol

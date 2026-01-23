@@ -355,7 +355,7 @@ static void process_pps() {
   if (lastPpsCapture != 0) {
     uint32_t since = elapsed32(now, lastPpsCapture);
     if (since > (uint32_t)(F_CPU + F_CPU / 2)) {
-      gpsStatus = GpsStatus::NO_PPS;
+      gpsStatus = GpsStatus::HOLDOVER;
       gpsState  = GpsState::HOLDOVER;
     }
   }
@@ -396,6 +396,9 @@ static void process_pps() {
       float J_frac = (pps_delta_slow ? (float)last_hampel_mad / (float)pps_delta_slow : 0.0f);
       pps_J_ppm = ppm_from_frac(J_frac);
 
+      float frac = fabsf((float)((int64_t)pps_delta_inst - (int64_t)pps_delta_slow)) / (float)pps_delta_slow;
+      bool within = (frac <= Tunables::correctionJumpThresh);
+
       // State machine transitions (hysteresis)
       uint32_t now_ms = millis();
       static uint32_t last_pps_ms = 0;
@@ -413,7 +416,9 @@ static void process_pps() {
       if (gpsState == GpsState::NO_PPS) {
         gpsState = GpsState::ACQUIRING;
       }
-      bool lockReady = (pps_R_ppm <= Tunables::ppsLockRppm) && (pps_J_ppm <= Tunables::ppsLockJppm);
+      bool lockReady = (pps_R_ppm <= Tunables::ppsLockRppm)
+        && (pps_J_ppm <= Tunables::ppsLockJppm)
+        && within;
       lockStable = lockReady ? (uint8_t)min<int>(lockStable+1, 255) : 0;
 
       if (lockStable >= PPS_LOCK_STABLE_COUNT) {
@@ -448,22 +453,15 @@ static void process_pps() {
 
       // Map internal state to public gpsStatus for CSV compatibility
       switch (gpsState) {
-        case GpsState::NO_PPS:    gpsStatus = GpsStatus::NO_PPS; break;
-        case GpsState::LOCKED:    gpsStatus = GpsStatus::LOCKED; break;
-        default:                  gpsStatus = GpsStatus::ACQUIRING; break;
+        case GpsState::NO_PPS:     gpsStatus = GpsStatus::NO_PPS; break;
+        case GpsState::LOCKED:     gpsStatus = GpsStatus::LOCKED; break;
+        case GpsState::HOLDOVER:   gpsStatus = GpsStatus::HOLDOVER; break;
+        case GpsState::BAD_JITTER: gpsStatus = GpsStatus::BAD_JITTER; break;
+        default:                   gpsStatus = GpsStatus::ACQUIRING; break;
       }
 
       // 4) Corrections (for reporting)
       corrInst = (float)F_CPU / (float)pps_delta_inst;
-
-      // 5) Lock metric: instantaneous vs slow (fractional)
-      float frac = fabsf((float)((int64_t)pps_delta_inst - (int64_t)pps_delta_slow)) / (float)pps_delta_slow;
-      bool within = (frac <= Tunables::correctionJumpThresh);
-      static uint8_t stable = 0;
-      stable = within ? (uint8_t)min<int>(stable + 1, PPS_LOCK_STABLE_COUNT) : 0;
-
-      gpsStatus = (stable >= PPS_LOCK_STABLE_COUNT) ? GpsStatus::LOCKED : GpsStatus::ACQUIRING;
-
     } else {
       gpsStatus = GpsStatus::ACQUIRING;
       // (stable counter implicitly resets on first edge or by 'within' above)
